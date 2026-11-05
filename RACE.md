@@ -18,13 +18,19 @@ verdict for each. Add or remove rows as needed.
 
 | # | What you found (method, field, or class) | Verdict, in one line |
 |---|---|---|
-| 1 | | |
-| 2 | | |
-| 3 | | |
-| 4 | | |
+| 1 | `BookingService.book`: `hasOverlap` then `insert` | Race: each call is atomic, but the check-and-insert pair is not. |
+| 2 | `InMemoryBookingStore.bookings` | Safe per method: access is synchronized and snapshots do not expose the list. |
+| 3 | `BookingService.sequence` | Safe: `AtomicLong` gives concurrent callers distinct ids. |
+| 4 | `BookingStats` counters | Racy by design, but approximate counters never control booking decisions. |
+| 5 | `BookingService.catalog` | Safe: built during construction and read-only afterward. |
+| 6 | `cancelAndPromote` | Safe: cancellation and promotion share one synchronized store call. |
 
 **Which one explains the ticket, and how you know.** Tie it to the invariant
 the ticket names.
+
+`BookingService.book` explains it: two callers can both observe no overlap before
+either inserts. Both then insert `CONFIRMED` bookings, violating the invariant
+that a room has at most one confirmed booking covering any minute.
 
 ### Predicted interleaving (write this before you run your race test)
 
@@ -34,10 +40,11 @@ as your prediction needs.
 
 | Step | Thread A | Thread B |
 |---|---|---|
-| t1 | | |
-| t2 | | |
-| t3 | | |
-| | **End state:** | |
+| t1 | `hasOverlap` returns `false`; pause before `insert` | |
+| t2 | | `hasOverlap` returns `false` |
+| t3 | | Insert confirmed booking B |
+| t4 | Resume and insert confirmed booking A | |
+| | **End state:** two overlapping `CONFIRMED` bookings | |
 
 If the run turned out different from your prediction, add one line on what
 you missed. Leave the table as you first wrote it.
