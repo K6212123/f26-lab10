@@ -55,6 +55,24 @@ you missed. Leave the table as you first wrote it.
 that pair pins the schedule you predicted, and the output of two separate
 runs (assertion failure and log lines).
 
+Aim: `hasOverlap`, call 1. The gate parks A after its check returns `false` but
+before `book` can insert. B then checks and inserts before A is released, pinning
+the predicted schedule. Both runs were red:
+
+```text
+Run 1
+2026-11-05T23:22:29.332Z INFO booking.confirmed booking=bk-1 room=WEH-5409 start=540 end=600
+2026-11-05T23:22:29.336Z INFO booking.confirmed booking=bk-2 room=WEH-5409 start=540 end=600
+AssertionFailedError: a room may have at most one confirmed booking covering any minute
+==> expected: <1> but was: <2>
+
+Run 2
+2026-11-05T23:22:41.956Z INFO booking.confirmed booking=bk-1 room=WEH-5409 start=540 end=600
+2026-11-05T23:22:41.961Z INFO booking.confirmed booking=bk-2 room=WEH-5409 start=540 end=600
+AssertionFailedError: a room may have at most one confirmed booking covering any minute
+==> expected: <1> but was: <2>
+```
+
 ---
 
 ## Milestone 2: the patch a teammate sent
