@@ -24,8 +24,17 @@ class RaceTest {
 
     @Test
     void overlappingBookingsCannotBothBeConfirmed() throws InterruptedException {
+        assertOneConfirmedAfterPinnedRace(1);
+    }
+
+    @Test
+    void defensiveRecheckStillLeavesAWindowBeforeInsert() throws InterruptedException {
+        assertOneConfirmedAfterPinnedRace(2);
+    }
+
+    private void assertOneConfirmedAfterPinnedRace(int overlapCall) throws InterruptedException {
         InMemoryBookingStore real = new InMemoryBookingStore();
-        PausingStore gated = new PausingStore(real, "hasOverlap", 1);
+        PausingStore gated = new PausingStore(real, "hasOverlap", overlapCall);
         BookingService service = new BookingService(gated, ROOMS);
 
         Thread first = new Thread(() -> service.book(ROOM_ID, START, END), "customer-a");

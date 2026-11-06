@@ -79,11 +79,37 @@ AssertionFailedError: a room may have at most one confirmed booking covering any
 
 **Your milestone-1 test on the patched code.** Green or red. Paste the result.
 
+Green. With the gate still aimed at `hasOverlap` call 1, the added re-check
+rejects A after B inserts:
+
+```text
+2026-11-06T01:04:42.104Z INFO booking.confirmed booking=bk-1 room=WEH-5409 start=540 end=600
+2026-11-06T01:04:42.114Z INFO booking.rejected room=WEH-5409 start=540 end=600 reason=slot already held
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
 **The re-aimed run.** Method name, call index, the pasted result, and one line
 on why that aim tests the patch rather than sidestepping it.
 
+Re-aimed at `hasOverlap` call 2, the patch's new check. It parks A after that
+check returns `false` but before `insert`, directly testing the new window:
+
+```text
+2026-11-06T01:05:04.764Z INFO booking.confirmed booking=bk-2 room=WEH-5409 start=540 end=600
+2026-11-06T01:05:04.772Z INFO booking.confirmed booking=bk-1 room=WEH-5409 start=540 end=600
+AssertionFailedError: a room may have at most one confirmed booking covering any minute
+==> expected: <1> but was: <2>
+Tests run: 1, Failures: 1, Errors: 0, Skipped: 0
+BUILD FAILURE
+```
+
 **Your verdict.** Accept or reject, and what your milestone-1 result does and
 does not show about the patch.
+
+Reject. The green milestone-1 test shows the extra check closes the original
+pinned window, but not that check-and-insert is atomic. The re-aimed red test
+shows the same race remains between the new check and `insert`.
 
 ---
 
