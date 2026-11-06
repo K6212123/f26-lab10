@@ -119,13 +119,89 @@ shows the same race remains between the new check and `insert`.
 and the two operations it now covers. Paste the diff of your change and the
 passing run of your milestone-1 test and the full suite.
 
+Option 2: added synchronized `insertIfNoOverlap`. The store monitor now covers
+the overlap check and insertion as one atomic operation. The teammate's extra
+check was removed from the shipped code.
+
+```diff
+--- BookingStore.java
++++ BookingStore.java
+@@
++    /** The overlap check and insertion happen as one indivisible operation. */
++    boolean insertIfNoOverlap(Booking booking);
+
+--- InMemoryBookingStore.java
++++ InMemoryBookingStore.java
+@@
++    @Override
++    public synchronized boolean insertIfNoOverlap(Booking booking) {
++        if (overlapsConfirmed(booking)) {
++            return false;
++        }
++        bookings.add(booking);
++        return true;
++    }
+
+--- BookingService.java
++++ BookingService.java
+@@
+-        if (store.hasOverlap(roomId, startMinute, endMinute)) {
++        Booking booking = new Booking(nextId(), roomId, startMinute, endMinute,
++                BookingStatus.CONFIRMED);
++        if (!store.insertIfNoOverlap(booking)) {
+             return reject(roomId, startMinute, endMinute, "slot already held");
+         }
+-        Booking booking = new Booking(nextId(), roomId, startMinute, endMinute,
+-                BookingStatus.CONFIRMED);
+-        store.insert(booking);
+
+--- PausingStore.java
++++ PausingStore.java
+@@
++    @Override
++    public boolean insertIfNoOverlap(Booking booking) {
++        return gate("insertIfNoOverlap",
++                () -> delegate.insertIfNoOverlap(booking));
++    }
+```
+
+Milestone-1 test:
+
+```text
+2026-11-06T01:14:34.393Z INFO booking.rejected room=WEH-5409 start=540 end=600 reason=slot already held
+2026-11-06T01:14:34.400Z INFO booking.confirmed booking=bk-1 room=WEH-5409 start=540 end=600
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+Full suite:
+
+```text
+Tests run: 13, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
 **Is your milestone-1 test still testing anything?** After your fix, describe
 what that test now exercises. Did `PausingStore` pause a call during the green run? How do
 you know?
+
+Yes. It now pauses `insertIfNoOverlap` call 1 after A atomically inserts but
+before A returns to the service, then makes B attempt the same slot. B is
+rejected and the end-state assertion still checks exactly one confirmation.
+`awaitPaused()` returned true (and is asserted), so the gate fired.
 
 **What runs one at a time now that ran in parallel before.** Name concretely which callers
 queue behind which. "Nothing, it is just correct now" does not count as an
 answer.
 
+Concurrent `book` callers now queue on the store monitor for the whole
+check-and-insert operation. Because the in-memory store has one monitor,
+bookings for different rooms also briefly queue behind each other, as do other
+synchronized store calls such as cancellation and listing.
+
 **What you left unfixed.** For anything your review flagged that you chose not
 to fix, one line each on why.
+
+`BookingStats` remains racy because its counters are explicitly approximate and
+never drive booking decisions. The catalog and ID sequence need no fix: the
+catalog is read-only and the sequence is atomic.

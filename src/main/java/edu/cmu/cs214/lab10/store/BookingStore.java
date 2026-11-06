@@ -25,6 +25,14 @@ public interface BookingStore {
      */
     boolean hasOverlap(String roomId, int startMinute, int endMinute);
 
+    /**
+     * Stores a CONFIRMED booking only when its room and range are free.
+     * The overlap check and insertion happen as one indivisible operation.
+     *
+     * @return true when inserted, false when a confirmed booking overlaps it
+     */
+    boolean insertIfNoOverlap(Booking booking);
+
     /** Stores the booking. Ids are assumed unique; the store does not check. */
     void insert(Booking booking);
 

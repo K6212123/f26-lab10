@@ -24,32 +24,51 @@ class RaceTest {
 
     @Test
     void overlappingBookingsCannotBothBeConfirmed() throws InterruptedException {
-        assertOneConfirmedAfterPinnedRace(1);
-    }
-
-    @Test
-    void defensiveRecheckStillLeavesAWindowBeforeInsert() throws InterruptedException {
-        assertOneConfirmedAfterPinnedRace(2);
-    }
-
-    private void assertOneConfirmedAfterPinnedRace(int overlapCall) throws InterruptedException {
         InMemoryBookingStore real = new InMemoryBookingStore();
-        PausingStore gated = new PausingStore(real, "hasOverlap", overlapCall);
+        PausingStore gated = new PausingStore(real, "insertIfNoOverlap", 1);
         BookingService service = new BookingService(gated, ROOMS);
 
-        Thread first = new Thread(() -> service.book(ROOM_ID, START, END), "customer-a");
+        Thread first = customer(service, "customer-a");
         first.start();
-        assertTrue(gated.awaitPaused(), "first overlap check should reach the gate");
+        assertTrue(gated.awaitPaused(), "first atomic insert should reach the gate");
 
-        Thread second = new Thread(() -> service.book(ROOM_ID, START, END), "customer-b");
+        Thread second = customer(service, "customer-b");
         second.start();
         second.join(PausingStore.TIMEOUT_MILLIS);
 
         gated.release();
+        joinAndAssertFinished(first, second);
+        assertOneConfirmed(real);
+    }
+
+    @Test
+    void secondAtomicAttemptAlsoPreservesInvariant() throws InterruptedException {
+        InMemoryBookingStore real = new InMemoryBookingStore();
+        PausingStore gated = new PausingStore(real, "insertIfNoOverlap", 2);
+        BookingService service = new BookingService(gated, ROOMS);
+
+        Thread first = customer(service, "customer-a");
+        Thread second = customer(service, "customer-b");
+        first.start();
+        second.start();
+        assertTrue(gated.awaitPaused(), "second atomic insert should reach the gate");
+        gated.release();
+
+        joinAndAssertFinished(first, second);
+        assertOneConfirmed(real);
+    }
+
+    private Thread customer(BookingService service, String name) {
+        return new Thread(() -> service.book(ROOM_ID, START, END), name);
+    }
+
+    private void joinAndAssertFinished(Thread first, Thread second) throws InterruptedException {
         first.join(PausingStore.TIMEOUT_MILLIS);
         second.join(PausingStore.TIMEOUT_MILLIS);
-
         assertFalse(first.isAlive() || second.isAlive(), "both booking calls should finish");
+    }
+
+    private void assertOneConfirmed(InMemoryBookingStore real) {
         long confirmed = real.bookingsForRoom(ROOM_ID).stream()
                 .filter(booking -> booking.status() == BookingStatus.CONFIRMED)
                 .filter(booking -> booking.overlaps(START, END))
@@ -84,10 +103,11 @@ class RaceTest {
     //   new PausingStore(real, "bookingsForRoom", 1)   // park call 1
     //   new PausingStore(real, "insert", 3)            // park call 3 of insert
     //
-    // Valid method names are the four on BookingStore: hasOverlap, insert,
-    // bookingsForRoom, cancelAndPromote. On the chosen call the wrapper
-    // delegates, then parks the calling thread before returning the answer it
-    // already computed. The gate fires once and once only.
+    // Valid method names are those on BookingStore: hasOverlap,
+    // insertIfNoOverlap, insert, bookingsForRoom, cancelAndPromote. On the
+    // chosen call the wrapper delegates, then parks the calling thread before
+    // returning the answer it already computed. The gate fires once and once
+    // only.
     // ------------------------------------------------------------------
 
     // ------------------------------------------------------------------

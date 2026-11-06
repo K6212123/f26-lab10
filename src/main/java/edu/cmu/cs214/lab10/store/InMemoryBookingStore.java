@@ -32,6 +32,15 @@ public final class InMemoryBookingStore implements BookingStore {
     }
 
     @Override
+    public synchronized boolean insertIfNoOverlap(Booking booking) {
+        if (overlapsConfirmed(booking)) {
+            return false;
+        }
+        bookings.add(booking);
+        return true;
+    }
+
+    @Override
     public synchronized void insert(Booking booking) {
         bookings.add(booking);
     }
